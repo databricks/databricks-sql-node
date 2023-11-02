@@ -46,8 +46,6 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient, IClientContext {
   private static defaultLogger?: IDBSQLLogger;
 
-  private connectionProvider?: IConnectionProvider;
-
   private authProvider?: IAuthentication;
 
   private client?: TCLIService.Client;
@@ -57,6 +55,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   });
 
   private readonly logger: IDBSQLLogger;
+
+  private connectionProvider?: IConnectionProvider;
+
+  private ConnectionProviderConstructor: new(o: IConnectionOptions) => IConnectionProvider;
 
   private readonly thrift = thrift;
 
@@ -73,18 +75,18 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     super();
     this.logger = options?.logger ?? DBSQLClient.getDefaultLogger();
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
+    this.ConnectionProviderConstructor = options?.connectionProvider || HttpConnection;
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
     return {
-      host: options.host,
+      ...options,
       port: options.port || 443,
-      path: prependSlash(options.path),
+      path: prependSlash(options.path || ''),
       https: true,
-      socketTimeout: options.socketTimeout,
-      proxy: options.proxy,
       headers: {
         'User-Agent': buildUserAgentString(options.clientId),
+        ...(options.headers || {})
       },
     };
   }
@@ -129,7 +131,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
     this.authProvider = this.initAuthProvider(options, authProvider);
 
-    this.connectionProvider = new HttpConnection(this.getConnectionOptions(options));
+    this.connectionProvider = new this.ConnectionProviderConstructor(this.getConnectionOptions(options));
 
     const thriftConnection = await this.connectionProvider.getThriftConnection();
 
